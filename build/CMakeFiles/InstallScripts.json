@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/kbasnet/rt-control-loop/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
