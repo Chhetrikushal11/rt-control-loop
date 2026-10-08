@@ -14,6 +14,12 @@ struct timespec add_nanoseconds(struct timespec ts, int64_t ns_to_add) {
     
     return ts;
 }
+
+int64_t diff_ns(struct timespec later, struct timespec earlier){
+    int64_t later_ns = later.tv_sec * ONE_SEC_NS + later.tv_nsec;
+    int64_t earlier_ns = earlier.tv_sec * ONE_SEC_NS + earlier.tv_nsec;
+    return later_ns - earlier_ns;
+}
 int main()
 {
     struct timespec ts;
@@ -36,5 +42,19 @@ int main()
     struct timespec res;
     clock_getres(CLOCK_MONOTONIC, &res);
     printf("resolution: %ld s  %ld ns\n", (long)res.tv_sec, res.tv_nsec);
+    
+
+    struct timespec t1 = {10, 100000000};
+    struct timespec t2 = {10, 150000000};
+    printf("diff1: %ld ns  (expect 50000000)\n", diff_ns(t2, t1));
+
+    struct timespec t3 = {10, 900000000};
+    struct timespec t4 = {11, 100000000};
+    printf("diff2: %ld ns  (expect 200000000)\n", diff_ns(t4, t3));
+
+    struct timespec t5 = {10, 0};
+    struct timespec t6 = {13, 0};
+    printf("diff3: %ld ns  (expect 3000000000)\n", diff_ns(t6, t5));
+
     return 0;
 }

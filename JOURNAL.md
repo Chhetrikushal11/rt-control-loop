@@ -37,7 +37,7 @@ Reading the clock
 * step 1:- read the clock
 for this we need to use 
 struct timespec ts;
-clock_gettime (CLOCK_MON0TONIC, &ts);
+clock_gettime (CLOCK_MONOTONIC, &ts);
 printf("%ld s %ld ns\n", ts.tv_sec, ts.tv_nsec);
 
 //---------------- question ---------------------//
@@ -101,3 +101,19 @@ Question Remains
 
 
 
+Date: 10/7/26
+Day 3 Skipped
+
+
+Date: 10/8/26
+Day 4
+    Part 1: Need to create a int64_t diff_ns
+int64_t diff_ns(struct timespec later, struct timespec earlier){
+    int64_t later_ns = later.tv_sec * ONE_SEC_NS + later.tv_nsec;
+    int64_t earlier_ns = earlier.tv_sec * ONE_SEC_NS + earlier.tv_nsec;
+    return later_ns - earlier_ns;
+}
+    - here first we convert the each time to absolute nanosecond count and subtract.
+    - this wasy we never get trapped into negative intermeditae trap.
+    - tv_sec is seconds since boot, so a few thousnad. But if a timespec from CLOCK_REALTIME ever reached this function.
+    - tv_sec is ~1.8 billion and intermediate becomes 1.8 x 10^18. But int64_t tops out around 9.2 x 10^18.This means we will have head room upto year 2262 if we start now.
