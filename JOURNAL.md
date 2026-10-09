@@ -286,3 +286,17 @@ AFTER:
 That’s the self-correction. The sleep isn’t always 1 ms. It’s always “however long is left until the deadline.” It was 856 µs there. If you’d woken 2 ms late it would be negative, the kernel would return immediately without sleeping at all, and you’d see a deadline miss — which is exactly what 78,747 of your samples are.
 
 So to answer your sentence directly: no, we do not sleep 1 ms every cycle. We sleep whatever remains. It averages near 1 ms only because the loop averages 1 ms. The variation in sleep duration is the mechanism that keeps the grid fixed.
+
+Baseline, stock WSL2, 100,000 cycles, no RT tuning:
+  min   14.87 µs
+  p50  144.46 µs
+  p99  428.17 µs
+  p99.9 608.66 µs
+  max 7522.51 µs
+  misses >100 µs: 78,747 / 100,000
+
+Finding 1: max is 12x p99.9 and 52x p50. Percentiles hide the
+events that matter. Hard real-time quotes the max, not p99.
+
+Finding 2: run-to-run spread is large (run 1 max 5566 µs,
+run 2 max 7523 µs). One run is not a measurement on this platform.
