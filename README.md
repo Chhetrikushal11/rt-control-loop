@@ -1,6 +1,6 @@
 # rt-control-loop
 
-measurement done to understand how Linux Kernel behaves in microseconds to optimize its behaviour
+how general-purpose OS can hold a 1kHZ deadline
 
 ## Results
 WSL2 on Windows 11, stock kernel, no real-time tuning. 1 kHz target,
