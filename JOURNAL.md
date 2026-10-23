@@ -300,3 +300,144 @@ events that matter. Hard real-time quotes the max, not p99.
 
 Finding 2: run-to-run spread is large (run 1 max 5566 µs,
 run 2 max 7523 µs). One run is not a measurement on this platform.
+
+Date: 10/23/26
+Day 6
+Real-Time Scheduling Policy
+
+The Problem We are trying solve
+    - When we run a Standard C++ program on Linux, the OS uses a fair-share scheduler (SCHED_OTHER). The OS kernel constantly interrupts your program, moves it off the CPU, runs background services, updates the desktop UI, and then gices the CPU back to you milliseconds later.
+
+        - In your baseline run, this OS preemption caused massive latency spikes up to 7.5 milliseconds- completely destroying your 1ms deadline
+
+
+    - What we are trying to achieve with the SCHED_FIFO?
+        - we are calling function call sched_setscheduler(0, SCHED_FIFO, &param) bypasses the default Linux fair-share scheduler.
+        - it tells the Linux Kernel: " this thread has real-time priority(set to 80). Do not ever preempt it for standard processes. Let it run uninterrupted until it finishes or sleeps."
+
+    How this fits into OverallPlan
+        - we are changing one thing, measuring it and validating it.
+            1. Baseline Run - Ran the loop under standard OS settings to measure how bad the jitter is 
+                (discovered 7.5 ms max spikes).
+            2. Code we want to implement (SCHED_FIFO): Tells the kernel to stop letting normal OS task steal our CPU.
+            3. What We Expect to See Next - When you compile, run, and check the output of this code, you will see the p99, p99.9 and max jitter drop drastically because the OS is no logner kicking your thread off the processor.
+
+        After this verification that it is working well in single thread we can move on to next isolation lever (such as memory locking with mlockall and core pinnng) to drive our jitter down to absolute zero.
+```cpp
+        #include <cstdio>
+        #include <ctime>
+        #include <cstdint>
+        #include <cstdlib>
+        #include <cstring>
+        #include <cerrno>
+        #include <sched.h>     // Required for sched_setscheduler and struct sched_param
+        #include <algorithm>  // Required for std::sort
+
+        constexpr int64_t ONE_SEC_NS = 1'000'000'000;
+        constexpr int CYCLES = 100000;            // 100,000 cycles = 100 seconds
+        constexpr int64_t PERIOD_NS = 1'000'000; // 1 ms period (1KHz)
+        constexpr int64_t MISS_THRESHOLD_NS = 100'000;   // 100 µs, same as baseline
+
+        // Static BSS allocation to avoid runtime dynamic allocations
+        static int64_t jitter_samples[CYCLES];
+
+        struct timespec add_nanoseconds(struct timespec ts, int64_t ns_to_add)
+        {
+            int64_t total_ns = ts.tv_nsec + ns_to_add;
+            ts.tv_sec += total_ns / ONE_SEC_NS;
+            ts.tv_nsec = total_ns % ONE_SEC_NS;
+            return ts;
+        }
+
+        // Overflow-Safe Time Difference Calculation: Compute the difference in nanoseconds between two timespec structures
+        int64_t diff_ns(struct timespec later, struct timespec earlier){
+        int64_t dt_sec = later.tv_sec - earlier.tv_sec;
+        int64_t dt_ns = later.tv_nsec - earlier.tv_nsec;
+        return (dt_sec * ONE_SEC_NS + dt_ns);
+        }
+
+        int main()
+        {
+            // ------- SINGLE LEVER: SCHED_FIFO REAL-TIME SCHEDULING SETTING ------
+            struct sched_param param;
+            std::memset(&param, 0, sizeof(param));
+            param.sched_priority = 80; // Mid-range RT priority (1-99 range)
+
+            // pid = 0 targets the calling thread/process
+            if (sched_setscheduler(0, SCHED_FIFO, &param) == -1)
+            {
+                std::fprintf(stderr,"[ERROR] sched_setscheduler(SCHED_FIFO, prio = 80) failed: %s (errno=%d)\n",
+                std::strerror(errno), errno);
+                
+                if(errno == EPERM)
+                {
+                    std::fprintf(stderr, "[HINT] Process lacks privilege. Re-run with root/sudo or set rtprio rlimits.\n");
+
+                }
+                std::exit(EXIT_FAILURE);
+            }
+            std::printf("[SUCCESS] Real-time policy set to SCHED_FIFO with priority %d\n", param.sched_priority);
+
+            struct timespec next, actual;
+            std::printf("Running %d cycles (~100s) at 1KHz under SCHED_FIFO ...\n", CYCLES);
+            clock_gettime(CLOCK_MONOTONIC, &next);
+
+            for(int i = 0; i < CYCLES; i++)
+            {
+                next = add_nanoseconds(next, PERIOD_NS);
+                clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
+                clock_gettime(CLOCK_MONOTONIC, &actual);
+                jitter_samples[i] = diff_ns(actual, next);
+            }
+            
+            // ------ POST-LOOP STATISTICS & PERCENTILES -------------
+
+            std::sort(jitter_samples, jitter_samples + CYCLES);
+
+            int64_t  min_j  = jitter_samples[0];
+            int64_t p50_j   = jitter_samples[CYCLES * 50 / 100];
+            int64_t p99_j   = jitter_samples[CYCLES * 99 / 100];
+            int64_t p99_9_j = jitter_samples[CYCLES * 999/1000];
+            int64_t max_j   = jitter_samples[CYCLES -1];
+
+            int64_t sum_j = 0;
+            int deadline_miss_count = 0;
+
+            for (int i = 0; i < CYCLES; i++){
+                sum_j += jitter_samples[i];
+                int64_t j = jitter_samples[i];
+                if (j > MISS_THRESHOLD_NS) {
+                deadline_miss_count++;
+                 }
+            }
+
+            double mean_j = (double)sum_j / CYCLES;
+
+            std::printf("\n-- DAY 6 LATENCY PROFILE: SCHED_FIFO ALONE (100k SAMPLES) ------\n");
+            std::printf("Min   : %8.3f us\n", min_j / 1000.0);
+            std::printf("Mean  : %8.3f us\n", mean_j / 1000.0);
+            std::printf("p50   : %8.3f us\n", p50_j / 1000.0);
+            std::printf("p99   : %8.3f us\n", p99_j / 1000.0);
+            std::printf("p99.9 : %8.3f us\n", p99_9_j / 1000.0);
+            std::printf("Max   : %8.3f us\n", max_j / 1000.0);
+            std::printf("Deadline Misses: %d / %d (%.2f%%)\n", deadline_miss_count, CYCLES, (double)deadline_miss_count / CYCLES * 100.0);
+            std::printf("================================================================\n");
+            return 0;
+
+        }
+```
+        Verification & Gotchas Handled:
+        Explicit Error Check: If sched_setscheduler() returns -1, it immediately prints the detailed strerror(errno) message (e.g., Operation not permitted) and halts with EXIT_FAILURE, avoiding false baseline runs.
+
+        Priority Selection: sched_priority is explicitly set to 80 inside struct sched_param, protecting high-priority core kernel threads while out-prioritizing all standard SCHED_OTHER process threads.
+
+
+    After testing the code in WSL
+    Metric  	    Day 5 baseline	Day 6 SCHED_FIFO	RESULT
+    Min             14.87 µs	        4.95 µs	       ↓ better
+    Mean	        171.0 µs	        110.6 µs	   ↓ better
+    p50	            144.5 µs	        86.1 µs	       ↓ ~halved
+    p99	            428.2 µs	        334.5 µs	   ↓ better
+    p99.9	        608.7 µs	        543.1 µs	   ↓ better
+    Max	            7522.5 µs	        9167.9 µs	   ↑ WORSE
+    Misses >100µs	78,747	            44,089	       ↓ ~halved

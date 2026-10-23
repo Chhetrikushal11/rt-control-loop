@@ -29,10 +29,18 @@ Finding 2: run-to-run spread is large (run 1 max 5566 µs, run 2 max was 7523 µ
 - Since we have to integrate more computationally taxing calculation and some algorithms like Kalman filters or we may need to run ML models a learned forecaster, state estimation, may be reinforcement learning about  the behaviour of the nuclear reactor. 
 While doing so we may need to substitute industrial PAC and adopt Industrial PC running Linux. When we make this switch we need to know how deterministic is the Industrial PC we are using. For Beckhoff or Rockwell the deterministic trail will be done and someone will have put out a table about how their PAC work in the interval of nanosecond. What does jitter may look like.
 As PAC will have watchdog timer with predefined scan cycle time if the misses we measure occur in the industrial setting watchdog will have tripped 78747 times in 100 seconds. In similar fashion we need to predefine the interval to prevent the misses 
-## Next
+
 
 Week 2: 
 Apply SCHED_FIFO, mlockall, and core pinning, measuring after each change individually rather than all at once, to attribute improvement to a specific cause.
+Day 6: add SCHED_FIFO scheduling lever + 100us deadline-miss counter
+
+SCHED_FIFO alone vs Day 5 baseline (100k cycles, 100us threshold):
+median 144->86us, misses 78,747->44,089 (both ~halved), mean down.
+Worst case unchanged/worse (7.5->9.2ms): bounded by the WSL2 hypervisor,
+which in-guest scheduling can't reach. Needs bare metal + PREEMPT_RT.
+
+# NEXT
 
 
 
